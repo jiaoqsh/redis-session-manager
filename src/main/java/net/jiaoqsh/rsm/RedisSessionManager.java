@@ -1,8 +1,6 @@
 package net.jiaoqsh.rsm;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Enumeration;
 
 import net.jiaoqsh.rsm.redis.JedisTemplate;
 import net.jiaoqsh.rsm.redis.JedisUtils;
@@ -34,9 +32,6 @@ public class RedisSessionManager extends ManagerBase{
 	protected String password = null;
 	protected int timeout = JedisUtils.DEFAULT_TIMEOUT;
 	// -------------------- configuration properties end--------------------
-	protected byte[] NULL_SESSION = "null".getBytes();
-	protected static final String TOMCAT_SESSION_PREFIX = "tomcat:session:";
-	
 	protected JedisPool jedisPool;
 	protected JedisTemplate jedisTemplate;
 	
@@ -172,18 +167,13 @@ public class RedisSessionManager extends ManagerBase{
         session.setValid(true);
         session.setCreationTime(System.currentTimeMillis());
         session.setMaxInactiveInterval(this.maxInactiveInterval);
-        byte[] serializeValue = null;
-		try {
-			serializeValue = serializer.serializeFrom(session);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+
         String id = sessionId;
         do{
 	        if (id == null) {
 	            id = generateSessionId();
 	        }
-        }while(jedisTemplate.setnxex(id.getBytes(), this.maxInactiveInterval, serializeValue));
+        }while(jedisTemplate.hsetnxex(id, "id", id, this.maxInactiveInterval));
         logger.info("create session, id :"+ id);
         
         session.setId(id);       
@@ -229,40 +219,23 @@ public class RedisSessionManager extends ManagerBase{
     
     private Session loadSessionFromRedis(String id) throws IOException{
     	logger.info("loadSessionFromRedis id:" + id);
-    	RedisSession session;
-    	byte[] data = jedisTemplate.get(id.getBytes());
-    	try {
-    	if (data == null) {
+    	
+    	if(!jedisTemplate.exists(id)){
     		logger.debug("Session " + id + " not found in Redis");
-            session = null;
-         } else if (Arrays.equals(NULL_SESSION, data)) {
-            throw new IllegalStateException("Race condition encountered: attempted to load session[" + id + "] which has been created but not yet serialized.");
-         } else {
-        	logger.debug("Deserializing session " + id + " from Redis");
-            session = (RedisSession)createEmptySession();
-            serializer.deserializeInto(data, session);
-            //session.setId(id);
-            session.setNew(false);
-            session.setMaxInactiveInterval(getMaxInactiveInterval());
-            //session.access();
-            session.setValid(true);
-
-            if (logger.isTraceEnabled()) {
-              logger.trace("Session Contents [" + id + "]:");
-              Enumeration en = session.getAttributeNames();
-              while(en.hasMoreElements()) {
-            	  logger.trace("  " + en.nextElement());
-              }
-            }
-          }
-    	} catch (IOException e) {
-    		logger.fatal(e.getMessage());
-	        throw e;
-	    } catch (ClassNotFoundException ex) {
-	    	logger.fatal("Unable to deserialize into session", ex);
-	        throw new IOException("Unable to deserialize into session", ex);
-	    } 
-
+    		return null;
+    	}
+    	
+    	logger.debug("session " + id + " exists in Redis");
+    	RedisSession session = (RedisSession)createEmptySession();
+    	session.setCreationTime(System.currentTimeMillis());
+        session.setNew(false);
+        session.setMaxInactiveInterval(getMaxInactiveInterval());
+        session.setValid(true);
+        session.setLoadId(id);
+        
+        //this.add(session);
+        //sessionCounter++;
+        
         return session;
     }
     
@@ -275,7 +248,7 @@ public class RedisSessionManager extends ManagerBase{
      */
     @Override
     public void remove(Session session, boolean update) {
-    	logger.info("Removing session ID : " + session.getId());
+    	logger.info("Removing session, ID : " + session.getId());
     	
         if (session.getIdInternal() != null) {
             sessions.remove(session.getIdInternal());

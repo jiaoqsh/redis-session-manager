@@ -1,6 +1,6 @@
 package net.jiaoqsh.rsm;
 
-import java.io.IOException;
+import net.jiaoqsh.rsm.redis.utils.JsonMapper;
 
 import org.apache.catalina.session.StandardSession;
 import org.apache.juli.logging.Log;
@@ -19,6 +19,10 @@ public class RedisSession extends StandardSession{
 		this._manager = manager;
 	}
 	
+	void setLoadId(String id) {
+		this.id = id;
+	}
+	
 	/**
      * Update the accessed time information for this session.  This method
      * should be called by the context when a request comes in for a particular
@@ -29,7 +33,7 @@ public class RedisSession extends StandardSession{
 	   log.info("access id=" + this.id);
        super.access();
        
-       _manager.getJedisTemplate().setex(this.id, this.maxInactiveInterval);
+       _manager.getJedisTemplate().setex(id, this.maxInactiveInterval);
     }
 
 	 // ----------------------------------------------HttpSession Public Methods
@@ -45,6 +49,13 @@ public class RedisSession extends StandardSession{
     @Override
     public Object getAttribute(String name) {
     	Object value = super.getAttribute(name);
+    	
+    	if(value==null){
+    		String jsonValue = _manager.getJedisTemplate().hget(id, name);
+    		value = JsonMapper.nonEmptyMapper().fromJson(jsonValue, Object.class);
+    		
+    		super.setAttribute(name, value, false);
+    	}
         
     	return value;
 
@@ -74,14 +85,9 @@ public class RedisSession extends StandardSession{
         if(value==null)
         	return ;
         
-        byte[] serializeValue = null;
-		try {
-			serializeValue = _manager.serializer.serializeFrom(this);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+        _manager.getJedisTemplate().hset(id, name, 
+        		JsonMapper.nonEmptyMapper().toJson(value));
         
-        _manager.getJedisTemplate().setex(this.id.getBytes(), this.maxInactiveInterval, serializeValue);
     }
     
     /**
@@ -100,15 +106,8 @@ public class RedisSession extends StandardSession{
     protected void removeAttributeInternal(String name, boolean notify) {
     	super.removeAttributeInternal(name, notify);
     	
-    	//TODO reomve issue
-    	
-    	/*byte[] serializeValue = null;
-		try {
-			serializeValue = _manager.serializer.serializeFrom(this);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-    	_manager.getJedisTemplate().setex(this.id.getBytes(), this.maxInactiveInterval, serializeValue);*/
+    	_manager.getJedisTemplate().hdel(id, name);
+ 
     }
     
     /**

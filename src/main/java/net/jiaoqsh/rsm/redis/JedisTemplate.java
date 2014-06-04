@@ -380,6 +380,32 @@ public class JedisTemplate {
 		});
 	}
 	
+	public void hsetex(final String key, final String field, final String value, final int seconds) {
+		execute(new JedisActionNoResult() {
+
+			@Override
+			public void action(Jedis jedis) {
+				jedis.hset(key, field, value);
+				jedis.expire(key, seconds);
+			}
+		});
+	}
+	
+	public Boolean hsetnxex(final String key, final String field, final String value, final int seconds) {
+		return execute(new JedisAction<Boolean>() {
+
+			@Override
+			public Boolean action(Jedis jedis) {
+				if(jedis.hsetnx(key, field, value)>0){
+					jedis.hset(key, field, value);
+					jedis.expire(key, seconds);
+					return true;
+				}
+				return false;
+			}
+		});
+	}
+	
 	/**
 	 * 返回hash中域的数量, key不存在时返回0，key类型不是hash时抛出异常.
 	 */
@@ -389,6 +415,16 @@ public class JedisTemplate {
 			@Override
 			public Long action(Jedis jedis) {
 				return jedis.hlen(key);
+			}
+		});
+	}
+	
+	public Long hdel(final String key, final String... fields) {
+		return execute(new JedisAction<Long>() {
+
+			@Override
+			public Long action(Jedis jedis) {
+				return jedis.hdel(key, fields);
 			}
 		});
 	}
